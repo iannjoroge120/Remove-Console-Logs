@@ -5,8 +5,13 @@
   "icon": "assets/ConsolelogRemover.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/lorcents/Remove-Console-Logs.git"
+    "url": "https://github.com/iannjoroge120/Remove-Console-Logs.git"
   },
+  "bugs": {
+    "url": "https://github.com/iannjoroge120/Remove-Console-Logs/issues"
+  },
+  "homepage": "https://github.com/iannjoroge120/Remove-Console-Logs#readme",
+  "license": "MIT",
   "version": "1.0.0",
   "publisher": "IanNjoroge",
   "engines": {
@@ -17,7 +22,7 @@
     "Formatters",
     "Other"
   ],
-  "main": "./extension.js",
+  "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
@@ -495,10 +500,16 @@
     }
   },
   "scripts": {
+    "build": "esbuild extension.js --bundle --platform=node --target=node18 --format=cjs --external:vscode --minify --sourcemap --outfile=dist/extension.js",
+    "watch": "npm run build -- --watch",
+    "vscode:prepublish": "npm run build",
     "lint": "eslint .",
-    "test": "mocha --ui tdd \"test/unit/**/*.test.js\"",
     "pretest": "npm run lint",
-    "test:integration": "node ./test/runTest.js"
+    "test": "mocha --ui tdd \"test/unit/**/*.test.js\"",
+    "pretest:integration": "npm run build",
+    "test:integration": "node ./test/runTest.js",
+    "package": "vsce package",
+    "publish:vsce": "vsce publish"
   },
   "devDependencies": {
     "@types/glob": "^8.1.0",
@@ -506,6 +517,8 @@
     "@types/node": "20.2.5",
     "@types/vscode": "^1.78.0",
     "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.25.12",
     "eslint": "^8.41.0",
     "glob": "^8.1.0",
     "mocha": "^10.2.0",
