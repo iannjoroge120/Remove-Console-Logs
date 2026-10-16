@@ -27,6 +27,7 @@
 		"out/",
 		".vscode-test/",
 		"*.bak",
-		"test/fixtures/"
+		"test/fixtures/",
+		"dist/"
 	]
 }
