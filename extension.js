@@ -1,128 +1,141 @@
 const vscode = require('vscode');
+const { SUPPORTED_LANGUAGE_IDS } = require('./src/core/parse');
+const { SECTION } = require('./src/config');
+const { isSupported, clearCache, readText, scanText } = require('./src/scanner');
+const { runOperation, undoLastOperation, output } = require('./src/operations');
+const commands = require('./src/commands');
+const { insertLog } = require('./src/insertLog');
+const { StatusBar, showInFile } = require('./src/statusBar');
+const { ConsoleDiagnostics, ConsoleCodeActions } = require('./src/diagnostics');
+const { ConsoleTreeProvider } = require('./src/treeView');
 
-let commandRegistered = false;
-let undoDisposable;
-let originalCodeMap = new Map();
+function debounce(fn, ms) {
+    const timers = new Map();
+    return (key, ...args) => {
+        clearTimeout(timers.get(key));
+        timers.set(key, setTimeout(() => {
+            timers.delete(key);
+            fn(...args);
+        }, ms));
+    };
+}
 
-async function activate(context) {
-    const commandDisposable = vscode.commands.registerCommand('extension.removeConsoleLogs', async function () {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
+/** Removes or comments out the calls behind a tree item (a file or one call). */
+async function runOnTreeItem(mode, item) {
+    if (!item) {
+        return;
+    }
+    const text = await readText(item.uri);
+    const result = scanText(item.uri, text);
+    const filter = item.call
+        ? call => call.line === item.call.line && call.method === item.call.method
+        : undefined;
+    await runOperation({ mode, files: [{ uri: item.uri, text, result, filter }], where: 'here' });
+}
 
-        if (workspaceFolders && workspaceFolders.length > 0) {
-            vscode.window.showInformationMessage('Looking for console logs in the workspace...');
+async function revealCall(item) {
+    const document = await vscode.workspace.openTextDocument(item.uri);
+    const editor = await vscode.window.showTextDocument(document, { preview: true });
+    const start = document.positionAt(item.call.start);
+    const end = document.positionAt(item.call.end);
+    editor.selection = new vscode.Selection(start, end);
+    editor.revealRange(new vscode.Range(start, end), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+}
 
-            let totalRemovedCount = 0;
+function activate(context) {
+    const statusBar = new StatusBar();
+    const diagnostics = new ConsoleDiagnostics();
+    const tree = new ConsoleTreeProvider();
+    const view = vscode.window.createTreeView('consoleLogsRemover.view', { treeDataProvider: tree, showCollapseAll: true });
+    tree.attach(view);
 
-            for (const folder of workspaceFolders) {
-                const folderPath = folder.uri.fsPath;
-                const files = await vscode.workspace.findFiles(
-                    new vscode.RelativePattern(folderPath, '**/*.{js,jsx,ts,tsx}'),
-                    '**/node_modules/**'
-                );
+    vscode.commands.executeCommand('setContext', 'consoleLogsRemover.supportedLanguages', SUPPORTED_LANGUAGE_IDS);
 
-                for (const file of files) {
-                    const document = await vscode.workspace.openTextDocument(file);
-                    const edits = await processFile(document);
+    const register = (id, fn) => context.subscriptions.push(vscode.commands.registerCommand(id, fn));
 
-                    if (edits.length > 0) {
-                        totalRemovedCount += edits.length;
-                        applyEdits(document.uri, edits);
-                        showUndoButton(context, document.uri);
-                    }
-                }
-            }
+    register('consoleLogsRemover.removeFromFile', () => commands.inFile('remove'));
+    register('consoleLogsRemover.removeFromSelection', () => commands.inSelection('remove'));
+    register('consoleLogsRemover.removeFromWorkspace', () => commands.inWorkspace('remove'));
+    register('consoleLogsRemover.removeFromExplorer', (uri, uris) => commands.inExplorerSelection('remove', uri, uris));
+    register('consoleLogsRemover.removeFromChangedLines', () => commands.inChangedLines());
+    register('consoleLogsRemover.removeInserted', () => commands.removeInserted());
+    register('consoleLogsRemover.commentOutInFile', () => commands.inFile('comment'));
+    register('consoleLogsRemover.commentOutInSelection', () => commands.inSelection('comment'));
+    register('consoleLogsRemover.commentOutInWorkspace', () => commands.inWorkspace('comment'));
+    register('consoleLogsRemover.uncommentInFile', () => commands.inFile('uncomment'));
+    register('consoleLogsRemover.uncommentInWorkspace', () => commands.inWorkspace('uncomment'));
+    register('consoleLogsRemover.insertLog', insertLog);
+    register('consoleLogsRemover.undo', undoLastOperation);
+    register('consoleLogsRemover.showInFile', showInFile);
+    register('consoleLogsRemover.showOutput', () => output.show());
+    register('consoleLogsRemover.refreshView', () => tree.refresh());
+    register('consoleLogsRemover.revealCall', revealCall);
+    register('consoleLogsRemover.removeTreeItem', item => runOnTreeItem('remove', item));
+    register('consoleLogsRemover.commentOutTreeItem', item => runOnTreeItem('comment', item));
+    // Command id used before 1.0; kept so existing keybindings keep working.
+    register('extension.removeConsoleLogs', () => commands.inWorkspace('remove'));
 
-            if (totalRemovedCount === 0) {
-                vscode.window.showInformationMessage('No console log(s) statement found in the workspace.');
-            }
-        } else {
-            vscode.window.showInformationMessage('No workspace found.');
+    const onDocumentChange = debounce(document => {
+        diagnostics.update(document);
+        tree.updateDocument(document);
+        if (vscode.window.activeTextEditor && vscode.window.activeTextEditor.document === document) {
+            statusBar.update();
+        }
+    }, 300);
+
+    const watcher = vscode.workspace.createFileSystemWatcher('**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts,vue,svelte,astro,html,htm}');
+    watcher.onDidCreate(uri => tree.updateUri(uri));
+    watcher.onDidChange(uri => {
+        if (!vscode.workspace.textDocuments.some(d => d.uri.toString() === uri.toString())) {
+            tree.updateUri(uri);
         }
     });
-
-    context.subscriptions.push(commandDisposable);
-
-    if (!commandRegistered) {
-        commandRegistered = true;
-        vscode.commands.executeCommand('setContext', 'removeConsoleLogsCommandAvailable', true);
-    }
-
-    const commands = await vscode.commands.getCommands(true);
-    if (commands.includes('extension.undoRemoveConsoleLogs')) {
-        vscode.commands.executeCommand('setContext', 'removeConsoleLogsUndoAvailable', true);
-    }
-}
-
-async function processFile(document) {
-    const consoleLogRegex = /console\.log\s*\([\s\S]*?\);?/g;
-    const text = document.getText();
-    const edits = [];
-
-    let match;
-    while ((match = consoleLogRegex.exec(text))) {
-        const startPosition = document.positionAt(match.index);
-        const endPosition = document.positionAt(match.index + match[0].length);
-        const range = new vscode.Range(startPosition, endPosition);
-        const edit = new vscode.TextEdit(range, '');
-        edits.push(edit);
-    }
-
-    // Store the original code for undo
-    originalCodeMap.set(document.uri, text);
-
-    return edits;
-}
-
-function applyEdits(uri, edits) {
-    const editBuilder = new vscode.WorkspaceEdit();
-    editBuilder.set(uri, edits);
-    vscode.workspace.applyEdit(editBuilder);
-}
-
-function undoRemoveConsoleLogs(uri) {
-    const originalCode = originalCodeMap.get(uri);
-
-    if (originalCode) {
-        const editBuilder = new vscode.WorkspaceEdit();
-        const range = new vscode.Range(new vscode.Position(0, 0), new vscode.Position(1000000, 0)); // Assuming a large range
-
-        editBuilder.replace(uri, range, originalCode);
-        vscode.workspace.applyEdit(editBuilder);
-
-        removeUndoButton();
-
-        vscode.window.showInformationMessage('Reverted successfully.');
-    }
-}
-
-function showUndoButton(context, uri) {
-    removeUndoButton();
-
-    undoDisposable = vscode.commands.registerCommand('extension.undoRemoveConsoleLogs', () => {
-        undoRemoveConsoleLogs(uri);
+    watcher.onDidDelete(uri => {
+        clearCache(uri);
+        tree.removeUri(uri);
     });
 
-    const message = 'Removed console logs. Undo';
-    vscode.window.showInformationMessage(message, { modal: false }, 'Undo').then(result => {
-        if (result === 'Undo') {
-            undoRemoveConsoleLogs(uri);
-        }
-    });
+    context.subscriptions.push(
+        statusBar,
+        diagnostics,
+        view,
+        watcher,
+        output,
+        vscode.languages.registerCodeActionsProvider(
+            SUPPORTED_LANGUAGE_IDS.map(language => ({ language })),
+            new ConsoleCodeActions(),
+            ConsoleCodeActions.metadata
+        ),
+        vscode.window.onDidChangeActiveTextEditor(() => statusBar.update()),
+        vscode.workspace.onDidOpenTextDocument(document => diagnostics.update(document)),
+        vscode.workspace.onDidChangeTextDocument(event => {
+            if (event.contentChanges.length && isSupported(event.document)) {
+                onDocumentChange(event.document.uri.toString(), event.document);
+            }
+        }),
+        vscode.workspace.onDidCloseTextDocument(document => {
+            diagnostics.delete(document.uri);
+            clearCache(document.uri);
+        }),
+        vscode.workspace.onDidChangeConfiguration(event => {
+            if (!event.affectsConfiguration(SECTION)) {
+                return;
+            }
+            clearCache();
+            diagnostics.refreshAll();
+            statusBar.update();
+            if (tree.scanned && ['methods', 'include', 'exclude', 'respectGitignore', 'ignoreComment']
+                .some(key => event.affectsConfiguration(`${SECTION}.${key}`))) {
+                tree.refresh();
+            }
+        })
+    );
 
-    context.subscriptions.push(undoDisposable);
+    vscode.workspace.textDocuments.forEach(document => diagnostics.update(document));
+    statusBar.update();
 }
 
-function removeUndoButton() {
-    if (undoDisposable) {
-        undoDisposable.dispose();
-        undoDisposable = undefined;
-    }
-}
-
-function deactivate() {
-    vscode.commands.executeCommand('setContext', 'removeConsoleLogsCommandAvailable', false);
-    removeUndoButton();
-}
+function deactivate() {}
 
 module.exports = {
     activate,
