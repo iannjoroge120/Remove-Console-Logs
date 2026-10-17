@@ -2,9 +2,12 @@
 .vscode-test/**
 test/**
 src/**
+cli/**
+scripts/**
 node_modules/**
 extension.js
 .gitignore
+.npmignore
 .yarnrc
 vsc-extension-quickstart.md
 **/jsconfig.json
@@ -12,3 +15,5 @@ vsc-extension-quickstart.md
 **/.eslintrc.json
 *.vsix
 *.bak
+*.tgz
+dist/cli.js

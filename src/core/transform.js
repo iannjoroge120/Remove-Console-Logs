@@ -280,10 +280,32 @@ function escapeRegExp(s) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Plans edits that mark console calls as intentional by appending the ignore
+ * comment to the end of each call's last line.
+ * @returns {TextEdit[]}
+ */
+function planKeep(text, calls, marker = 'keep-log') {
+    const lines = new LineIndex(text);
+    const byLine = new Map();
+    for (const call of calls) {
+        const entry = byLine.get(call.endLine);
+        if (entry) {
+            entry.calls.push(call);
+        } else {
+            const offset = lines.lineEnd(call.endLine);
+            const hasComment = /\/\/.*$/.test(text.slice(call.stmtEnd, offset));
+            byLine.set(call.endLine, { start: offset, end: offset, text: hasComment ? ` ${marker}` : ` // ${marker}`, call, calls: [call] });
+        }
+    }
+    return [...byLine.values()];
+}
+
 module.exports = {
     planRemoval,
     planCommentOut,
     planUncomment,
+    planKeep,
     findInsertPosition,
     buildLogStatement
 };

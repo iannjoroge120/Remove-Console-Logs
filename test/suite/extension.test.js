@@ -63,6 +63,50 @@ suite('Console Logs Remover (integration)', () => {
 		assert.ok(titles.includes('Keep this console.log (add // keep-log)'), titles.join(', '));
 	});
 
+	test('undo all reverts several changes in order', async () => {
+		const first = await openUntitled('console.log(1);\na();\n');
+		await vscode.commands.executeCommand('consoleLogsRemover.removeFromFile');
+		await vscode.commands.executeCommand('consoleLogsRemover.commentOutInFile');
+		const second = await openUntitled('b();\nconsole.debug(2);\n');
+		await vscode.commands.executeCommand('consoleLogsRemover.removeFromFile');
+		assert.strictEqual(first.document.getText(), 'a();\n');
+		assert.strictEqual(second.document.getText(), 'b();\n');
+
+		await vscode.commands.executeCommand('consoleLogsRemover.undoAll');
+		assert.strictEqual(first.document.getText(), 'console.log(1);\na();\n');
+		assert.strictEqual(second.document.getText(), 'b();\nconsole.debug(2);\n');
+	});
+
+	test('AI tools find and remove console calls', async function () {
+		if (!vscode.lm || !vscode.lm.invokeTool) {
+			this.skip();
+		}
+		const editor = await openUntitled('go();\nconsole.log(fn(1));\n');
+		const text = result => result.content.map(part => part.value).join('');
+
+		const found = await vscode.lm.invokeTool('consoleLogs_find', { input: { scope: 'file' }, toolInvocationToken: undefined });
+		assert.match(text(found), /Found 1 console call in 1 file/);
+		assert.match(text(found), /:2 {2}console\.log\(fn\(1\)\)/);
+
+		const applied = await vscode.lm.invokeTool('consoleLogs_apply', { input: { scope: 'file', action: 'remove' }, toolInvocationToken: undefined });
+		assert.match(text(applied), /Removed 1 console call/);
+		assert.strictEqual(editor.document.getText(), 'go();\n');
+
+		await vscode.commands.executeCommand('consoleLogsRemover.undo');
+		assert.strictEqual(editor.document.getText(), 'go();\nconsole.log(fn(1));\n');
+	});
+
+	test('keep all listed in the Console Logs view, then undo', async () => {
+		await vscode.commands.executeCommand('consoleLogsRemover.keepAllInView');
+		assert.match(await read('src/app.js'), /console\.log\('greeting', format\(user\)\); \/\/ keep-log/);
+		assert.match(await read('src/view.tsx'), /\/\/ keep-log/);
+		assert.strictEqual(await read('dist/bundle.js'), "console.log('excluded by default');\n");
+
+		await vscode.commands.executeCommand('consoleLogsRemover.undo');
+		assert.doesNotMatch(await read('src/app.js'), /keep-log/);
+		assert.doesNotMatch(await read('src/view.tsx'), /keep-log/);
+	});
+
 	test('removes across the workspace, honouring excludes and kept methods', async () => {
 		await vscode.commands.executeCommand('consoleLogsRemover.removeFromWorkspace');
 		assert.strictEqual(await read('src/app.js'), "function greet(user) {\n  console.error('kept');\n  return `hi ${user}`;\n}\n");

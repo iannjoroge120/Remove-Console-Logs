@@ -75,66 +75,110 @@ async function inExplorerSelection(mode, clicked, selected) {
     await runOperation({ mode, files, where });
 }
 
-/** Removes console calls only on lines changed since the last commit. */
-async function inChangedLines() {
+const withinLines = lines => call => {
+    for (let line = call.line; line <= call.endLine; line++) {
+        if (lines.has(line)) {
+            return true;
+        }
+    }
+    return false;
+};
+
+/**
+ * Files changed since the last commit, each with a filter that keeps only
+ * console calls on added or modified lines. Throws with a user-facing message
+ * when git can't be used.
+ */
+async function collectChangedFiles({ progress, token, methods } = {}) {
     if (!vscode.workspace.isTrusted) {
-        vscode.window.showWarningMessage('Git features are disabled in untrusted workspaces.');
-        return;
+        throw new Error('Git features are disabled in untrusted workspaces.');
     }
     const folders = (vscode.workspace.workspaceFolders || []).filter(f => f.uri.scheme === 'file');
     if (!folders.length) {
-        vscode.window.showWarningMessage('Open a folder that is a git repository first.');
-        return;
+        throw new Error('Open a folder that is a git repository first.');
     }
-
-    const files = await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: 'Console Logs Remover', cancellable: true },
-        async (progress, token) => {
-            progress.report({ message: 'Asking git what changed...' });
-            const candidates = new Set((await findTargetFiles(undefined, token)).map(u => u.fsPath));
-            const changed = [];
-            let anyRepo = false;
-            for (const folder of folders) {
-                const paths = await listChangedFiles(folder.uri.fsPath).catch(() => null);
-                if (paths) {
-                    anyRepo = true;
-                    changed.push(...paths.filter(p => candidates.has(p)));
-                }
-            }
-            if (!anyRepo) {
-                return null;
-            }
-            const result = [];
-            for (const fsPath of new Set(changed)) {
-                if (token.isCancellationRequested) {
-                    break;
-                }
-                const uri = vscode.Uri.file(fsPath);
-                progress.report({ message: vscode.workspace.asRelativePath(uri) });
-                const text = await readText(uri).catch(() => null);
-                if (text === null) {
-                    continue;
-                }
-                const lines = await changedLines(fsPath, text);
-                const filter = call => {
-                    for (let line = call.line; line <= call.endLine; line++) {
-                        if (lines.has(line)) {
-                            return true;
-                        }
-                    }
-                    return false;
-                };
-                result.push({ uri, text, result: scanText(uri, text), filter });
-            }
-            return result;
+    if (progress) {
+        progress.report({ message: 'Asking git what changed...' });
+    }
+    const candidates = new Set((await findTargetFiles(undefined, token)).map(u => u.fsPath));
+    const changed = [];
+    let anyRepo = false;
+    for (const folder of folders) {
+        const paths = await listChangedFiles(folder.uri.fsPath).catch(() => null);
+        if (paths) {
+            anyRepo = true;
+            changed.push(...paths.filter(p => candidates.has(p)));
         }
-    );
+    }
+    if (!anyRepo) {
+        throw new Error('No git repository found in this workspace.');
+    }
+    const result = [];
+    for (const fsPath of new Set(changed)) {
+        if (token && token.isCancellationRequested) {
+            break;
+        }
+        const uri = vscode.Uri.file(fsPath);
+        if (progress) {
+            progress.report({ message: vscode.workspace.asRelativePath(uri) });
+        }
+        const text = await readText(uri).catch(() => null);
+        if (text === null) {
+            continue;
+        }
+        const lines = await changedLines(fsPath, text);
+        result.push({ uri, text, result: scanText(uri, text, undefined, undefined, methods), filter: withinLines(lines) });
+    }
+    return result;
+}
 
-    if (files === null) {
-        vscode.window.showWarningMessage('No git repository found in this workspace.');
+/** Removes console calls only on lines changed since the last commit. */
+async function inChangedLines() {
+    let files;
+    try {
+        files = await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: 'Console Logs Remover', cancellable: true },
+            (progress, token) => collectChangedFiles({ progress, token })
+        );
+    } catch (err) {
+        vscode.window.showWarningMessage(err.message);
         return;
     }
     await runOperation({ mode: 'remove', files, where: 'in lines changed since the last commit' });
+}
+
+/**
+ * Fresh scans of the files behind a set of console calls, each filtered to
+ * those calls. Calls are matched by line and method so offsets from an older
+ * scan can't go stale.
+ * @param {{uri: vscode.Uri, line: number, method: string}[]} items
+ */
+async function collectCallTargets(items, methods) {
+    const byFile = new Map();
+    for (const item of items) {
+        const key = item.uri.toString();
+        if (!byFile.has(key)) {
+            byFile.set(key, { uri: item.uri, wanted: new Set() });
+        }
+        byFile.get(key).wanted.add(`${item.line}:${item.method}`);
+    }
+    const files = [];
+    for (const { uri, wanted } of byFile.values()) {
+        const text = await readText(uri);
+        files.push({ uri, text, result: scanText(uri, text, undefined, undefined, methods), filter: call => wanted.has(`${call.line}:${call.method}`) });
+    }
+    return files;
+}
+
+/** Applies `mode` to specific console calls, e.g. those checked in the tree or review list. */
+async function runOnCalls(mode, items, options = {}) {
+    if (!items.length) {
+        vscode.window.showInformationMessage('Nothing selected.');
+        return null;
+    }
+    const files = await collectCallTargets(items);
+    const where = items.length === 1 ? 'here' : 'in the selection';
+    return runOperation({ mode, files, where, ...options });
 }
 
 /** Removes only logs created by "Insert Log" (those starting with the prefix). */
@@ -154,5 +198,8 @@ module.exports = {
     inExplorerSelection,
     inChangedLines,
     removeInserted,
-    documentFile
+    documentFile,
+    collectChangedFiles,
+    collectCallTargets,
+    runOnCalls
 };

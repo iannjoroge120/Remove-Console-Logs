@@ -1,7 +1,7 @@
 {
   "name": "console-logs-remover",
   "displayName": "Console Logs Remover",
-  "description": "Find, review, remove, comment out or insert console.log calls safely, with preview and undo. Works with JS, TS, React, Vue, Svelte, Astro and HTML.",
+  "description": "Find, review, remove, comment out or insert console.log calls safely, with bulk actions, undo history and AI agent tools (Copilot, Claude Code, Cursor via MCP). JS, TS, React, Vue, Svelte, Astro, HTML.",
   "icon": "assets/ConsolelogRemover.png",
   "repository": {
     "type": "git",
@@ -12,14 +12,16 @@
   },
   "homepage": "https://github.com/iannjoroge120/Remove-Console-Logs#readme",
   "license": "MIT",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "IanNjoroge",
   "engines": {
-    "vscode": "^1.78.0"
+    "vscode": "^1.95.0",
+    "node": ">=18"
   },
   "categories": [
     "Linters",
     "Formatters",
+    "AI",
     "Other"
   ],
   "main": "./dist/extension.js",
@@ -91,11 +93,12 @@
       {
         "command": "consoleLogsRemover.undo",
         "title": "Undo Last Change",
-        "category": "Console Logs"
+        "category": "Console Logs",
+        "icon": "$(discard)"
       },
       {
         "command": "consoleLogsRemover.showInFile",
-        "title": "Show Console Logs in Current File",
+        "title": "Review Console Logs in Current File",
         "category": "Console Logs"
       },
       {
@@ -129,6 +132,82 @@
       {
         "command": "extension.removeConsoleLogs",
         "title": "Remove Console Logs (legacy)"
+      },
+      {
+        "command": "consoleLogsRemover.undoAll",
+        "title": "Undo All Changes",
+        "category": "Console Logs",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "consoleLogsRemover.showHistory",
+        "title": "Show Change History",
+        "category": "Console Logs",
+        "icon": "$(history)"
+      },
+      {
+        "command": "consoleLogsRemover.review",
+        "title": "Review Console Logs in Workspace",
+        "category": "Console Logs",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "consoleLogsRemover.setupAi",
+        "title": "Set Up AI Agents",
+        "category": "Console Logs",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "consoleLogsRemover.selectAll",
+        "title": "Select All",
+        "category": "Console Logs",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "consoleLogsRemover.clearSelection",
+        "title": "Clear Selection",
+        "category": "Console Logs",
+        "icon": "$(close-all)"
+      },
+      {
+        "command": "consoleLogsRemover.removeChecked",
+        "title": "Remove Selected",
+        "category": "Console Logs",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "consoleLogsRemover.commentOutChecked",
+        "title": "Comment Out Selected",
+        "category": "Console Logs",
+        "icon": "$(comment)"
+      },
+      {
+        "command": "consoleLogsRemover.keepChecked",
+        "title": "Keep Selected (add ignore comment)",
+        "category": "Console Logs",
+        "icon": "$(pass)"
+      },
+      {
+        "command": "consoleLogsRemover.removeAllInView",
+        "title": "Remove All Listed",
+        "category": "Console Logs",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "consoleLogsRemover.commentOutAllInView",
+        "title": "Comment Out All Listed",
+        "category": "Console Logs"
+      },
+      {
+        "command": "consoleLogsRemover.keepAllInView",
+        "title": "Keep All Listed (add ignore comment)",
+        "category": "Console Logs"
+      },
+      {
+        "command": "consoleLogsRemover.keepTreeItem",
+        "title": "Keep (add ignore comment)",
+        "category": "Console Logs",
+        "icon": "$(pass)"
       }
     ],
     "submenus": [
@@ -177,9 +256,18 @@
           "group": "3_comment@3"
         },
         {
+          "command": "consoleLogsRemover.showInFile",
+          "group": "0_review@1"
+        },
+        {
           "command": "consoleLogsRemover.undo",
           "when": "consoleLogsRemover.canUndo",
           "group": "4_undo@1"
+        },
+        {
+          "command": "consoleLogsRemover.undoAll",
+          "when": "consoleLogsRemover.canUndoAll",
+          "group": "4_undo@2"
         }
       ],
       "explorer/context": [
@@ -191,61 +279,121 @@
       ],
       "view/title": [
         {
-          "command": "consoleLogsRemover.refreshView",
+          "command": "consoleLogsRemover.review",
           "when": "view == consoleLogsRemover.view",
           "group": "navigation@1"
         },
         {
-          "command": "consoleLogsRemover.removeFromWorkspace",
-          "when": "view == consoleLogsRemover.view",
+          "command": "consoleLogsRemover.selectAll",
+          "when": "view == consoleLogsRemover.view && !consoleLogsRemover.hasChecked",
           "group": "navigation@2"
         },
         {
-          "command": "consoleLogsRemover.removeFromChangedLines",
-          "when": "view == consoleLogsRemover.view",
+          "command": "consoleLogsRemover.clearSelection",
+          "when": "view == consoleLogsRemover.view && consoleLogsRemover.hasChecked",
+          "group": "navigation@2"
+        },
+        {
+          "command": "consoleLogsRemover.removeChecked",
+          "when": "view == consoleLogsRemover.view && consoleLogsRemover.hasChecked",
           "group": "navigation@3"
         },
         {
-          "command": "consoleLogsRemover.commentOutInWorkspace",
-          "when": "view == consoleLogsRemover.view",
-          "group": "more@1"
-        },
-        {
-          "command": "consoleLogsRemover.uncommentInWorkspace",
-          "when": "view == consoleLogsRemover.view",
-          "group": "more@2"
-        },
-        {
-          "command": "consoleLogsRemover.removeInserted",
-          "when": "view == consoleLogsRemover.view",
-          "group": "more@3"
+          "command": "consoleLogsRemover.removeAllInView",
+          "when": "view == consoleLogsRemover.view && !consoleLogsRemover.hasChecked",
+          "group": "navigation@3"
         },
         {
           "command": "consoleLogsRemover.undo",
           "when": "view == consoleLogsRemover.view && consoleLogsRemover.canUndo",
-          "group": "more@4"
+          "group": "navigation@4"
+        },
+        {
+          "command": "consoleLogsRemover.refreshView",
+          "when": "view == consoleLogsRemover.view",
+          "group": "navigation@5"
+        },
+        {
+          "command": "consoleLogsRemover.commentOutChecked",
+          "when": "view == consoleLogsRemover.view && consoleLogsRemover.hasChecked",
+          "group": "1_selection@1"
+        },
+        {
+          "command": "consoleLogsRemover.keepChecked",
+          "when": "view == consoleLogsRemover.view && consoleLogsRemover.hasChecked",
+          "group": "1_selection@2"
+        },
+        {
+          "command": "consoleLogsRemover.commentOutAllInView",
+          "when": "view == consoleLogsRemover.view && !consoleLogsRemover.hasChecked",
+          "group": "2_all@1"
+        },
+        {
+          "command": "consoleLogsRemover.keepAllInView",
+          "when": "view == consoleLogsRemover.view && !consoleLogsRemover.hasChecked",
+          "group": "2_all@2"
+        },
+        {
+          "command": "consoleLogsRemover.removeFromChangedLines",
+          "when": "view == consoleLogsRemover.view",
+          "group": "3_scope@1"
+        },
+        {
+          "command": "consoleLogsRemover.removeInserted",
+          "when": "view == consoleLogsRemover.view",
+          "group": "3_scope@2"
+        },
+        {
+          "command": "consoleLogsRemover.uncommentInWorkspace",
+          "when": "view == consoleLogsRemover.view",
+          "group": "3_scope@3"
+        },
+        {
+          "command": "consoleLogsRemover.undoAll",
+          "when": "view == consoleLogsRemover.view && consoleLogsRemover.canUndoAll",
+          "group": "4_undo@1"
+        },
+        {
+          "command": "consoleLogsRemover.showHistory",
+          "when": "view == consoleLogsRemover.view && consoleLogsRemover.canUndo",
+          "group": "4_undo@2"
+        },
+        {
+          "command": "consoleLogsRemover.setupAi",
+          "when": "view == consoleLogsRemover.view",
+          "group": "5_ai@1"
         }
       ],
       "view/item/context": [
         {
-          "command": "consoleLogsRemover.commentOutTreeItem",
+          "command": "consoleLogsRemover.keepTreeItem",
           "when": "view == consoleLogsRemover.view && viewItem == consoleLogsCall",
           "group": "inline@1"
         },
         {
-          "command": "consoleLogsRemover.removeTreeItem",
-          "when": "view == consoleLogsRemover.view && viewItem =~ /^consoleLogs(File|Call)$/",
+          "command": "consoleLogsRemover.commentOutTreeItem",
+          "when": "view == consoleLogsRemover.view && viewItem == consoleLogsCall",
           "group": "inline@2"
         },
         {
-          "command": "consoleLogsRemover.commentOutTreeItem",
-          "when": "view == consoleLogsRemover.view && viewItem == consoleLogsFile",
-          "group": "1_actions@1"
+          "command": "consoleLogsRemover.removeTreeItem",
+          "when": "view == consoleLogsRemover.view && viewItem =~ /^consoleLogs(File|Call)$/",
+          "group": "inline@3"
         },
         {
           "command": "consoleLogsRemover.removeTreeItem",
           "when": "view == consoleLogsRemover.view && viewItem =~ /^consoleLogs(File|Call)$/",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "consoleLogsRemover.commentOutTreeItem",
+          "when": "view == consoleLogsRemover.view && viewItem =~ /^consoleLogs(File|Call)$/",
           "group": "1_actions@2"
+        },
+        {
+          "command": "consoleLogsRemover.keepTreeItem",
+          "when": "view == consoleLogsRemover.view && viewItem =~ /^consoleLogs(File|Call)$/",
+          "group": "1_actions@3"
         }
       ],
       "commandPalette": [
@@ -278,10 +426,6 @@
           "when": "editorLangId in consoleLogsRemover.supportedLanguages"
         },
         {
-          "command": "consoleLogsRemover.undo",
-          "when": "consoleLogsRemover.canUndo"
-        },
-        {
           "command": "consoleLogsRemover.removeFromChangedLines",
           "when": "isWorkspaceTrusted"
         },
@@ -307,6 +451,42 @@
         },
         {
           "command": "extension.removeConsoleLogs",
+          "when": "false"
+        },
+        {
+          "command": "consoleLogsRemover.undo",
+          "when": "consoleLogsRemover.canUndo"
+        },
+        {
+          "command": "consoleLogsRemover.undoAll",
+          "when": "consoleLogsRemover.canUndo"
+        },
+        {
+          "command": "consoleLogsRemover.showHistory",
+          "when": "consoleLogsRemover.canUndo"
+        },
+        {
+          "command": "consoleLogsRemover.selectAll",
+          "when": "false"
+        },
+        {
+          "command": "consoleLogsRemover.clearSelection",
+          "when": "false"
+        },
+        {
+          "command": "consoleLogsRemover.removeChecked",
+          "when": "false"
+        },
+        {
+          "command": "consoleLogsRemover.commentOutChecked",
+          "when": "false"
+        },
+        {
+          "command": "consoleLogsRemover.keepChecked",
+          "when": "false"
+        },
+        {
+          "command": "consoleLogsRemover.keepTreeItem",
           "when": "false"
         }
       ]
@@ -497,11 +677,129 @@
           "markdownDescription": "Console method used by **Insert Console Log**."
         }
       }
-    }
+    },
+    "languageModelTools": [
+      {
+        "name": "consoleLogs_find",
+        "displayName": "Find Console Logs",
+        "toolReferenceName": "consoleLogs",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(debug-console)",
+        "tags": [
+          "console",
+          "logging",
+          "debugging",
+          "cleanup"
+        ],
+        "userDescription": "Find console.log calls in the current file, the workspace or your uncommitted changes.",
+        "modelDescription": "Lists console.log/debug/info/trace/table/etc. calls as \"path:line  code\", using the parser in the Console Logs Remover extension (comments and strings are ignored). Read-only. Calls the user marked with a // keep-log comment, and console.warn/error by default, are excluded. Use scope \"changed\" to list only logs added since the last commit.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "scope": {
+              "type": "string",
+              "enum": [
+                "file",
+                "workspace",
+                "changed"
+              ],
+              "description": "\"file\": the file open in the editor (or the files in \"paths\"). \"workspace\": every source file, or the folders in \"paths\". \"changed\": only lines added or modified since the last git commit - use this to clean up debugging logs you added during the current task."
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Optional files or folders, relative to the workspace root."
+            },
+            "methods": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Optional console methods to match, e.g. [\"log\",\"debug\"]. Defaults to the user's setting (all methods except warn and error)."
+            }
+          }
+        }
+      },
+      {
+        "name": "consoleLogs_apply",
+        "displayName": "Remove Console Logs",
+        "toolReferenceName": "removeConsoleLogs",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(trash)",
+        "tags": [
+          "console",
+          "logging",
+          "debugging",
+          "cleanup"
+        ],
+        "userDescription": "Remove, comment out, keep or uncomment console.log calls. Shows a confirmation and can be undone.",
+        "modelDescription": "Removes (or comments out, keeps with a // keep-log comment, or uncomments) console calls without breaking syntax: sole bodies of if/loops become {}, arrow bodies become {}, and calls used as values become undefined. Prefer scope \"changed\" when cleaning up after your own debugging so pre-existing logs are untouched, or pass \"locations\" from consoleLogs_find to target specific calls. The user confirms before anything changes and can undo with \"Console Logs: Undo Last Change\".",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "remove",
+                "comment",
+                "keep",
+                "uncomment"
+              ],
+              "description": "What to do. Default \"remove\"."
+            },
+            "scope": {
+              "type": "string",
+              "enum": [
+                "file",
+                "workspace",
+                "changed"
+              ],
+              "description": "\"file\": the file open in the editor (or the files in \"paths\"). \"workspace\": every source file, or the folders in \"paths\". \"changed\": only lines added or modified since the last git commit - use this to clean up debugging logs you added during the current task."
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Optional files or folders, relative to the workspace root."
+            },
+            "methods": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Optional console methods to match, e.g. [\"log\",\"debug\"]. Defaults to the user's setting (all methods except warn and error)."
+            },
+            "locations": {
+              "type": "array",
+              "description": "Specific calls to act on, e.g. from consoleLogs_find. Overrides scope.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "line": {
+                    "type": "integer",
+                    "description": "1-based line"
+                  }
+                },
+                "required": [
+                  "path",
+                  "line"
+                ]
+              }
+            }
+          }
+        }
+      }
+    ]
   },
   "scripts": {
-    "build": "esbuild extension.js --bundle --platform=node --target=node18 --format=cjs --external:vscode --minify --sourcemap --outfile=dist/extension.js",
-    "watch": "npm run build -- --watch",
+    "build": "node scripts/build.js",
+    "watch": "node scripts/build.js --watch",
     "vscode:prepublish": "npm run build",
     "lint": "eslint .",
     "pretest": "npm run lint",
@@ -509,22 +807,22 @@
     "pretest:integration": "npm run build",
     "test:integration": "node ./test/runTest.js",
     "package": "vsce package",
-    "publish:vsce": "vsce publish"
+    "publish:vsce": "vsce publish",
+    "prepublishOnly": "npm run build",
+    "publish:npm": "npm publish"
   },
   "devDependencies": {
     "@types/glob": "^8.1.0",
     "@types/mocha": "^10.0.1",
     "@types/node": "20.2.5",
-    "@types/vscode": "^1.78.0",
+    "@types/vscode": "~1.95.0",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.25.12",
     "eslint": "^8.41.0",
     "glob": "^8.1.0",
     "mocha": "^10.2.0",
-    "typescript": "^5.1.3"
-  },
-  "dependencies": {
+    "typescript": "^5.1.3",
     "@babel/parser": "^7.29.9"
   },
   "keywords": [
@@ -540,7 +838,15 @@
     "typescript",
     "react",
     "vue",
-    "svelte"
+    "svelte",
+    "ai",
+    "copilot",
+    "mcp",
+    "agent",
+    "claude",
+    "cursor",
+    "cli",
+    "pre-commit"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -554,5 +860,8 @@
       "supported": "limited",
       "description": "Git features are unavailable in virtual workspaces."
     }
+  },
+  "bin": {
+    "console-logs-remover": "dist/cli.js"
   }
 }

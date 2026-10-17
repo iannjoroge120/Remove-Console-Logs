@@ -2,10 +2,13 @@ const vscode = require('vscode');
 const { SUPPORTED_LANGUAGE_IDS } = require('./src/core/parse');
 const { SECTION } = require('./src/config');
 const { isSupported, clearCache, readText, scanText } = require('./src/scanner');
-const { runOperation, undoLastOperation, output } = require('./src/operations');
+const { runOperation, undoLastOperation, undoAllOperations, showHistory, output } = require('./src/operations');
 const commands = require('./src/commands');
 const { insertLog } = require('./src/insertLog');
-const { StatusBar, showInFile } = require('./src/statusBar');
+const { StatusBar } = require('./src/statusBar');
+const { review } = require('./src/review');
+const { registerTools } = require('./src/aiTools');
+const { setupAi } = require('./src/aiSetup');
 const { ConsoleDiagnostics, ConsoleCodeActions } = require('./src/diagnostics');
 const { ConsoleTreeProvider } = require('./src/treeView');
 
@@ -33,6 +36,26 @@ async function runOnTreeItem(mode, item) {
     await runOperation({ mode, files: [{ uri: item.uri, text, result, filter }], where: 'here' });
 }
 
+/**
+ * Applies `mode` from the Console Logs view: to the checked items if there
+ * are any, otherwise to everything listed.
+ */
+async function runFromView(tree, mode) {
+    if (!tree.scanned) {
+        await tree.refresh();
+    }
+    const checked = tree.checkedCalls();
+    const items = checked.length ? checked : tree.allCalls();
+    if (!items.length) {
+        vscode.window.showInformationMessage('No console calls found in the workspace.');
+        return;
+    }
+    const summary = await commands.runOnCalls(mode, items);
+    if (summary && summary.count && checked.length) {
+        tree.clearChecked();
+    }
+}
+
 async function revealCall(item) {
     const document = await vscode.workspace.openTextDocument(item.uri);
     const editor = await vscode.window.showTextDocument(document, { preview: true });
@@ -46,8 +69,9 @@ function activate(context) {
     const statusBar = new StatusBar();
     const diagnostics = new ConsoleDiagnostics();
     const tree = new ConsoleTreeProvider();
-    const view = vscode.window.createTreeView('consoleLogsRemover.view', { treeDataProvider: tree, showCollapseAll: true });
+    const view = vscode.window.createTreeView('consoleLogsRemover.view', { treeDataProvider: tree, showCollapseAll: true, manageCheckboxStateManually: true });
     tree.attach(view);
+    registerTools(context);
 
     vscode.commands.executeCommand('setContext', 'consoleLogsRemover.supportedLanguages', SUPPORTED_LANGUAGE_IDS);
 
@@ -66,7 +90,20 @@ function activate(context) {
     register('consoleLogsRemover.uncommentInWorkspace', () => commands.inWorkspace('uncomment'));
     register('consoleLogsRemover.insertLog', insertLog);
     register('consoleLogsRemover.undo', undoLastOperation);
-    register('consoleLogsRemover.showInFile', showInFile);
+    register('consoleLogsRemover.undoAll', undoAllOperations);
+    register('consoleLogsRemover.showHistory', showHistory);
+    register('consoleLogsRemover.showInFile', () => review('file'));
+    register('consoleLogsRemover.review', () => review('workspace'));
+    register('consoleLogsRemover.setupAi', setupAi);
+    register('consoleLogsRemover.selectAll', () => tree.checkAll());
+    register('consoleLogsRemover.clearSelection', () => tree.clearChecked());
+    register('consoleLogsRemover.removeChecked', () => runFromView(tree, 'remove'));
+    register('consoleLogsRemover.commentOutChecked', () => runFromView(tree, 'comment'));
+    register('consoleLogsRemover.keepChecked', () => runFromView(tree, 'keep'));
+    register('consoleLogsRemover.removeAllInView', () => runFromView(tree, 'remove'));
+    register('consoleLogsRemover.commentOutAllInView', () => runFromView(tree, 'comment'));
+    register('consoleLogsRemover.keepAllInView', () => runFromView(tree, 'keep'));
+    register('consoleLogsRemover.keepTreeItem', item => runOnTreeItem('keep', item));
     register('consoleLogsRemover.showOutput', () => output.show());
     register('consoleLogsRemover.refreshView', () => tree.refresh());
     register('consoleLogsRemover.revealCall', revealCall);

@@ -98,6 +98,36 @@ async function changedLines(filePath, newText) {
     }
 }
 
+async function repoPaths(filePath) {
+    const root = (await git(['rev-parse', '--show-toplevel'], path.dirname(filePath))).trim();
+    return { root, rel: path.relative(root, filePath).split(path.sep).join('/') };
+}
+
+/**
+ * Absolute paths of files with staged additions or modifications.
+ * @returns {Promise<string[]|null>} null when `cwd` isn't in a git repo
+ */
+async function listStagedFiles(cwd) {
+    if (!(await isGitRepo(cwd))) {
+        return null;
+    }
+    const root = (await git(['rev-parse', '--show-toplevel'], cwd)).trim();
+    const out = await git(['diff', '--cached', '--name-only', '-z', '--diff-filter=ACMR'], root);
+    return splitZ(out).map(p => path.join(root, p));
+}
+
+/** The staged (index) version of a file. */
+async function stagedContent(filePath) {
+    const { root, rel } = await repoPaths(filePath);
+    return git(['show', `:${rel}`], root);
+}
+
+/** 0-based line numbers added or modified in the staged version of a file. */
+async function stagedAddedLines(filePath) {
+    const { root, rel } = await repoPaths(filePath);
+    return parseAddedLines(await git(['diff', '--cached', '--no-color', '-U0', '--', rel], root));
+}
+
 function allLines(text) {
     const count = text.split('\n').length;
     return new Set(Array.from({ length: count }, (_, i) => i));
@@ -123,5 +153,8 @@ module.exports = {
     listNonIgnoredFiles,
     listChangedFiles,
     changedLines,
+    listStagedFiles,
+    stagedContent,
+    stagedAddedLines,
     parseAddedLines
 };

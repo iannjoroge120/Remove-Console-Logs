@@ -2,6 +2,22 @@
 
 All notable changes to the "Console Logs Remover" extension are documented in this file.
 
+## [1.1.0]
+
+### Added
+- **Apply to all or pick and choose:** a review checklist (click the status bar count, or *Review Console Logs in Workspace*) with everything checked, filtering, toggle-all, and Remove / Comment out / Keep for the checked logs.
+- **Checkboxes in the Console Logs view**, with Select All, Clear Selection, and Remove / Comment Out / Keep for the selection, or for everything listed when nothing is selected.
+- **Undo history:** Undo All Changes and Show Change History (up to 20 steps). The summary notification offers Undo All.
+- **Keep** action: adds `// keep-log` to many calls at once, from the view, the review list, the CLI or AI tools.
+- **AI tools for Copilot agent mode and other VS Code chat agents:** `#consoleLogs` and `#removeConsoleLogs`, with confirmation in chat and normal undo.
+- **CLI and MCP server** (`npx console-logs-remover`) for Claude Code, Cursor, CI and pre-commit hooks: `--check`, `--fix`, `--comment`, `--keep`, `--uncomment`, `--changed`, `--staged`, `--json`, `--dry-run`. It reads `.vscode/settings.json`.
+- **Set Up AI Agents** command.
+- Quick Fixes: *Review all console calls in file* and *Remove all console calls in workspace*.
+
+### Changed
+- Requires VS Code 1.95 or later.
+- The extension now has no runtime dependencies. Everything is bundled.
+
 ## [1.0.0]
 
 A rewrite. Removal now parses your code instead of using a regular expression.
