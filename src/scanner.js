@@ -26,20 +26,20 @@ async function readText(uri) {
  */
 const cache = new Map();
 
-function scanText(uri, text, languageId, version) {
+function scanText(uri, text, languageId, version, methods) {
     const key = uri.toString();
     const cached = cache.get(key);
-    if (version !== undefined && cached && cached.version === version) {
+    if (!methods && version !== undefined && cached && cached.version === version) {
         return cached.result;
     }
     const config = getConfig(uri);
     const result = findConsoleCalls(text, {
         fileName: uri.path,
         languageId,
-        methods: config.methods,
+        methods: methods || config.methods,
         ignoreComment: config.ignoreComment
     });
-    if (version !== undefined) {
+    if (!methods && version !== undefined) {
         cache.set(key, { version, result });
     }
     return result;

@@ -1,0 +1,8 @@
+# The npm package only ships the CLI; the VS Code extension is published with vsce.
+*
+!dist/
+!dist/cli.js
+!README.md
+!LICENSE
+!CHANGELOG.md
+!package.json

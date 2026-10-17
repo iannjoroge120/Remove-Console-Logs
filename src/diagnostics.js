@@ -118,6 +118,15 @@ class ConsoleCodeActions {
             const all = new vscode.CodeAction(`Remove all ${calls.length} console calls in file`, vscode.CodeActionKind.QuickFix);
             all.edit = toWorkspaceEdit(document, planRemoval(text, calls));
             actions.push(all);
+
+            const reviewFile = new vscode.CodeAction('Review all console calls in file...', vscode.CodeActionKind.QuickFix);
+            reviewFile.command = { command: 'consoleLogsRemover.showInFile', title: 'Review console calls' };
+            actions.push(reviewFile);
+        }
+        if (here.length && vscode.workspace.workspaceFolders) {
+            const workspaceAll = new vscode.CodeAction('Remove all console calls in workspace...', vscode.CodeActionKind.QuickFix);
+            workspaceAll.command = { command: 'consoleLogsRemover.removeFromWorkspace', title: 'Remove console calls in workspace' };
+            actions.push(workspaceAll);
         }
         return actions;
     }

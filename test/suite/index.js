@@ -6,6 +6,8 @@ function run() {
 	// Create the mocha test
 	const mocha = new Mocha({
 		ui: 'tdd',
+		// The first tests run while VS Code and its built-in extensions are still starting up
+		timeout: 20000,
 		color: true
 	});
 
